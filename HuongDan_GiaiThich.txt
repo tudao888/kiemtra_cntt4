@@ -1,0 +1,172 @@
+===========================================================================
+  GIẢI THÍCH VÀ HƯỚNG DẪN THỰC HIỆN
+  Đề tài : Dự đoán nguy cơ bệnh tiểu đường từ thông số sức khỏe
+  Họ tên : Đào Anh Tú
+  Lớp    : CNTT4 – Mã SV: 26ACN022
+  Môn    : Trí Tuệ Nhân Tạo
+===========================================================================
+
+
+---------------------------------------------------------------------------
+BƯỚC 1. XÁC ĐỊNH BÀI TOÁN
+---------------------------------------------------------------------------
+- Mục tiêu : Xây dựng mô hình Machine Learning dự đoán nguy cơ mắc bệnh
+             tiểu đường dựa trên các thông số xét nghiệm máu và thông tin
+             cá nhân của bệnh nhân.
+- Đầu vào  : Tuổi, Giới tính, Glucose, HbA1C, Cholesterol, HDL, LDL,
+             Triglycerid, Creatinine, Ure, AcidUric, AST, ALT.
+- Đầu ra   : NguyCoTieuDuong
+               1 = Có nguy cơ mắc tiểu đường
+               0 = Không có nguy cơ
+- Loại bài : Phân loại nhị phân (Binary Classification)
+
+
+---------------------------------------------------------------------------
+BƯỚC 2. THU THẬP DỮ LIỆU
+---------------------------------------------------------------------------
+- File dữ liệu: CSDL_TieuDuong.csv
+- Số dòng gốc: 4.707 bệnh nhân, 14 cột thuộc tính
+- Nguồn       : Dữ liệu y tế thực tế được cung cấp trong đề kiểm tra
+
+
+---------------------------------------------------------------------------
+BƯỚC 3. TIỀN XỬ LÝ DỮ LIỆU
+---------------------------------------------------------------------------
+
+3.1. LÀM SẠCH DỮ LIỆU
+  a) Xóa khoảng trắng thừa trong các cột văn bản.
+
+  b) Đồng bộ dữ liệu:
+     - Cột GioiTinh: chuẩn hóa về "Nam" / "Nữ"
+       (male/Male -> Nam, female/Female/NU/Nu -> Nữ)
+     - Cột NguyCoTieuDuong: chuẩn hóa về 0 / 1
+       (TRUE/1/"Có nguy cơ" -> 1 | FALSE/0/"Không có nguy cơ" -> 0)
+
+  c) Xử lý dữ liệu lỗi / ngoại lai (thay bằng NaN):
+     - Tuổi       : chỉ giữ giá trị trong [1, 120]
+     - Glucose    : chỉ giữ giá trị trong [1, 50]  (mmol/L)
+     - HbA1C      : chỉ giữ giá trị trong [3, 20]  (%)
+     - Cholesterol: chỉ giữ giá trị trong [1, 20]  (mmol/L)
+
+  d) Xử lý dữ liệu trùng lặp: xóa các dòng trùng hoàn toàn, giữ dòng
+     đầu tiên.
+
+  e) Xử lý giá trị thiếu (NaN): điền bằng giá trị trung vị (median)
+     của từng cột số (thực hiện trong pipeline để tránh data leakage).
+
+3.2. BIẾN ĐỔI DỮ LIỆU
+  - Mã hóa (Label Encoding): cột GioiTinh -> GioiTinh_ma (0/1)
+  - Chuẩn hóa (StandardScaler): đưa tất cả cột số về phân phối chuẩn
+    (mean=0, std=1) để các mô hình hoạt động tốt hơn.
+  - Hai bước trên được gói trong sklearn Pipeline, chỉ fit trên tập
+    Train để không bị rò rỉ thông tin sang tập Test.
+
+3.3. PHÂN CHIA DỮ LIỆU
+  - Tỷ lệ: 70% Train – 30% Test
+  - Dùng stratify=y để đảm bảo tỷ lệ nhãn 0/1 đồng đều ở cả hai tập.
+
+
+---------------------------------------------------------------------------
+BƯỚC 4. CHỌN MÔ HÌNH
+---------------------------------------------------------------------------
+Ba mô hình được sử dụng và so sánh:
+
+  1. Logistic Regression
+     - Mô hình tuyến tính, dễ giải thích, phù hợp với dữ liệu y tế.
+     - Tham số: max_iter=1000, class_weight="balanced"
+
+  2. Random Forest
+     - Tập hợp nhiều cây quyết định (n_estimators=100), chống overfitting
+       tốt, xử lý tốt dữ liệu thiếu sau khi điền median.
+     - Tham số: class_weight="balanced", random_state=42
+
+  3. SVM (Support Vector Machine)
+     - Kernel RBF, phù hợp với bài toán phân loại phi tuyến.
+     - Dùng CalibratedClassifierCV để xuất xác suất dự đoán.
+
+
+---------------------------------------------------------------------------
+BƯỚC 5. HUẤN LUYỆN MÔ HÌNH
+---------------------------------------------------------------------------
+- Cả 3 mô hình đều được huấn luyện trên tập Train (70%).
+- Mỗi mô hình được bọc trong Pipeline gồm:
+    [Preprocessor (Imputer + Scaler)] -> [Classifier]
+- class_weight="balanced" giúp xử lý mất cân bằng nhãn
+  (Không có nguy cơ: ~3.610 mẫu / Có nguy cơ: ~1.097 mẫu).
+
+
+---------------------------------------------------------------------------
+BƯỚC 6. ĐÁNH GIÁ MÔ HÌNH
+---------------------------------------------------------------------------
+Đánh giá trên tập Test (30%) với các chỉ số:
+
+  Mô hình               | Accuracy
+  ----------------------|---------
+  Logistic Regression   | ~96.82%
+  Random Forest         | ~99.43%
+  SVM                   | ~95.33%
+
+Ngoài Accuracy, mỗi mô hình còn được đánh giá qua:
+  - Precision, Recall, F1-score (Classification Report)
+  - Ma trận nhầm lẫn (Confusion Matrix) hiển thị dạng heatmap
+
+
+---------------------------------------------------------------------------
+BƯỚC 7. GIAO DIỆN NGƯỜI DÙNG (Streamlit)
+---------------------------------------------------------------------------
+- Giao diện web cho phép nhập 13 thông số xét nghiệm của bệnh nhân.
+- Cho phép chọn 1 trong 3 mô hình để dự đoán.
+- Hiển thị kết quả: Có nguy cơ / Không có nguy cơ / Chưa rõ ràng.
+- Hiển thị xác suất hai chiều và thanh mức độ nguy cơ.
+- Giải thích kết quả: liệt kê các chỉ số bất thường so với ngưỡng
+  y tế chuẩn (Glucose, HbA1C, Cholesterol, Triglycerid, HDL).
+- Sidebar hiển thị thông tin mô hình và so sánh accuracy 3 mô hình.
+
+
+===========================================================================
+DANH SÁCH FILE TRONG FOLDER NỘP BÀI
+===========================================================================
+
+  App_DuBaoTieuDuong.py     <- File chính: toàn bộ code Python + Streamlit
+  CSDL_TieuDuong.csv        <- Dữ liệu đầu vào (được cung cấp trong đề)
+  CSDL_TieuDuong_Final.csv  <- Dữ liệu sau khi làm sạch (tự động tạo
+                               khi chạy chương trình lần đầu)
+  HuongDan_GiaiThich.txt    <- File này (giải thích + hướng dẫn)
+
+
+===========================================================================
+HƯỚNG DẪN CÀI ĐẶT VÀ CHẠY CHƯƠNG TRÌNH
+===========================================================================
+
+YÊU CẦU HỆ THỐNG:
+  - Python 3.12 trở lên
+  - Kết nối Internet (lần đầu cài thư viện)
+
+BƯỚC 1 – Cài thư viện (chỉ làm 1 lần):
+  Mở Command Prompt hoặc PowerShell, gõ lệnh:
+
+    pip install pandas numpy matplotlib seaborn scikit-learn streamlit
+
+BƯỚC 2 – Chạy ứng dụng:
+  Mở Command Prompt hoặc PowerShell, di chuyển vào folder chứa file:
+
+    cd "C:\Users\daotu\Downloads\DaoAnhTu_CNTT4_26ACN022_Kiemtra"
+
+  Chạy app:
+
+    python -m streamlit run App_DuBaoTieuDuong.py
+
+BƯỚC 3 – Sử dụng:
+  - Trình duyệt tự động mở tại địa chỉ: http://localhost:8501
+  - Nhập các thông số xét nghiệm vào form bên trái màn hình.
+  - Chọn mô hình dự đoán (Logistic Regression / Random Forest / SVM).
+  - Nhấn nút "Dự đoán nguy cơ tiểu đường" để xem kết quả.
+  - Xem đánh giá chi tiết mô hình trong phần "Kết quả đánh giá mô hình".
+
+LƯU Ý:
+  - File CSDL_TieuDuong.csv phải đặt cùng thư mục với App_DuBaoTieuDuong.py
+  - Lần đầu chạy sẽ mất vài giây để huấn luyện mô hình.
+  - Kết quả dự đoán chỉ mang tính tham khảo, không thay thế chẩn đoán
+    của bác sĩ.
+
+===========================================================================
